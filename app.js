@@ -16,7 +16,10 @@
  * (NOT the baw wallet 0x4dbC…B889 — the in-app browser connected the
  * user's main account, so the address differs from the 0xF664… prediction). */
 const CONTRACT_ADDRESS = "0x0EebF5Aca8a2C622f91cD8c816e789579719cf47";
-const DEPLOY_BLOCK = 0; // first block of the deployed contract (for badge history)
+/* First CheckIn was in block 134465382 (badge #1). The deploy itself is
+ * in (134465169, 134465382]; using the first check-in block as the scan
+ * start loses nothing — no contract events exist before it. */
+const DEPLOY_BLOCK = 134465382; // first block of the deployed contract (for badge history)
 const REGISTRY_ADDRESS = "0x60B9262456dE011F7d15a54CdD8c48bAaa8B022F"; // SPACE ID Agent ID
 const PUBLIC_RPC = "https://bsc-dataseed.binance.org"; // read-only fallback
 const BSC_CHAIN_ID = 56;
