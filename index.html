@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DailyAgent — Daily check-in badges for Agent ID holders</title>
+<meta name="description" content="One free check-in per day for Binance Agent ID holders. Each check-in mints a badge NFT. No token, no rewards — just proof you showed up.">
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.55; background: #0f1115; color: #e8eaf0; }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { text-align: center; margin-bottom: 24px; }
+  .logo { width: 72px; height: 72px; }
+  h1 { font-size: 28px; margin: 12px 0 4px; }
+  .tagline { color: #9aa3b2; margin: 0; }
+  .card { background: #1a1d24; border: 1px solid #2a2e38; border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+  .card h2 { font-size: 15px; margin: 0 0 10px; color: #9aa3b2; text-transform: uppercase; letter-spacing: .06em; }
+  .row { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-top: 1px solid #242833; }
+  .row:first-of-type { border-top: none; }
+  .row .k { color: #9aa3b2; }
+  .row .v { font-weight: 600; text-align: right; word-break: break-all; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; }
+  .pill.yes { background: #123f2a; color: #5fd68a; }
+  .pill.no { background: #3f1d1d; color: #ff8a8a; }
+  .pill.idle { background: #262a33; color: #9aa3b2; }
+  button { width: 100%; padding: 14px; font-size: 17px; font-weight: 700; border: none; border-radius: 12px; cursor: pointer; background: #f0b90b; color: #111; }
+  button:disabled { background: #2a2e38; color: #7d8590; cursor: default; }
+  button.secondary { background: #262a33; color: #e8eaf0; }
+  .note { font-size: 13px; color: #9aa3b2; }
+  .status { font-size: 14px; margin-top: 10px; min-height: 20px; }
+  .status a { color: #f0b90b; }
+  .badges { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+  .badge { background: #14161b; border: 1px solid #2a2e38; border-radius: 12px; padding: 10px; text-align: center; }
+  .badge img { width: 100%; border-radius: 8px; }
+  .badge .t { font-size: 13px; font-weight: 700; margin-top: 6px; }
+  .badge .d { font-size: 12px; color: #9aa3b2; }
+  footer { text-align: center; color: #7d8590; font-size: 13px; margin-top: 28px; }
+  footer a { color: #9aa3b2; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <svg class="logo" viewBox="0 0 96 96" aria-hidden="true"><circle cx="48" cy="48" r="44" fill="#f0b90b"/><circle cx="48" cy="48" r="36" fill="none" stroke="#111" stroke-width="3"/><path d="M34 49l10 10 18-22" fill="none" stroke="#111" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <h1>DailyAgent</h1>
+    <p class="tagline">Daily check-in badges for Agent ID holders.</p>
+  </header>
+
+  <div class="card">
+    <h2>How it works</h2>
+    <div>Hold a Binance Agent ID (<span class="note">name.ai</span>) and check in once per UTC day. Each check-in mints a free badge NFT to your wallet. Check in on consecutive days to build your streak.</div>
+    <div class="note" style="margin-top:8px">Free — gas only. No token, no rewards, no earnings. The badge is just proof you showed up. The contract has no owner, no fees and no pause switch.</div>
+  </div>
+
+  <div class="card">
+    <h2>Everyone</h2>
+    <div class="row"><span class="k">Total check-ins</span><span class="v" id="globalTotal">…</span></div>
+    <div class="row"><span class="k">Badges minted</span><span class="v" id="globalBadges">…</span></div>
+    <div class="row"><span class="k">Contract</span><span class="v" id="contractAddr">…</span></div>
+  </div>
+
+  <div class="card">
+    <h2>Your wallet</h2>
+    <div id="walletBox">
+      <button id="connectBtn">Connect wallet</button>
+      <div class="status" id="connectStatus">Connect with MetaMask or the Binance Wallet in-app browser. No QR codes, no sessions stored anywhere.</div>
+    </div>
+    <div id="accountBox" hidden>
+      <div class="row"><span class="k">Address</span><span class="v" id="myAddr">…</span></div>
+      <div class="row"><span class="k">Agent ID</span><span class="v" id="myAgentId"><span class="pill idle">checking…</span></span></div>
+      <div class="row"><span class="k">Today</span><span class="v" id="myToday"><span class="pill idle">…</span></span></div>
+      <div class="row"><span class="k">Current streak</span><span class="v" id="myStreak">…</span></div>
+      <div class="row"><span class="k">Total check-ins</span><span class="v" id="myTotal">…</span></div>
+      <div class="row"><span class="k">Badges held</span><span class="v" id="myBadges">…</span></div>
+      <div style="margin-top:14px">
+        <button id="checkInBtn" disabled>Check in for today</button>
+        <div class="status" id="txStatus"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="badgesCard" hidden>
+    <h2>My badges</h2>
+    <div class="badges" id="badgesGrid"></div>
+    <div class="note" id="badgesNote" style="margin-top:8px"></div>
+  </div>
+
+  <footer>
+    <div>DailyAgent — built for the Agent ID Hackathon.</div>
+    <div><a id="bscLink" href="#" target="_blank" rel="noopener">View contract on BscScan</a> · <a href="https://github.com/aben00/daily-agent" target="_blank" rel="noopener">Source code on GitHub</a></div>
+    <div class="note" style="margin-top:8px">DailyAgent is an independent community project. Not affiliated with Binance.</div>
+  </footer>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
