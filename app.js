@@ -12,11 +12,10 @@
 "use strict";
 
 /* ============================== CONFIG ============================== */
-/* FILL IN AFTER DEPLOY. Until then the page shows "not deployed yet". */
-const CONTRACT_ADDRESS = "0x0000000000000000000000000000000000000000";
-/* Predicted address IF the deployer 0x4dbC…B889 sends this deploy as its
- * next transaction (nonce 122): 0xF664d692c64d4F45b03e095CCC15a0Bcdd43486c
- * — verify it matches the real deployment, then paste it above. */
+/* Deployed 2026-11-19 ~14:37 WIB by the user's Binance Wallet account
+ * (NOT the baw wallet 0x4dbC…B889 — the in-app browser connected the
+ * user's main account, so the address differs from the 0xF664… prediction). */
+const CONTRACT_ADDRESS = "0x0EebF5Aca8a2C622f91cD8c816e789579719cf47";
 const DEPLOY_BLOCK = 0; // first block of the deployed contract (for badge history)
 const REGISTRY_ADDRESS = "0x60B9262456dE011F7d15a54CdD8c48bAaa8B022F"; // SPACE ID Agent ID
 const PUBLIC_RPC = "https://bsc-dataseed.binance.org"; // read-only fallback
