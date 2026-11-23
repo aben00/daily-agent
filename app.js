@@ -24,6 +24,25 @@ const REGISTRY_ADDRESS = "0x60B9262456dE011F7d15a54CdD8c48bAaa8B022F"; // SPACE 
 const PUBLIC_RPC = "https://bsc-dataseed.binance.org"; // read-only fallback
 const BSC_CHAIN_ID = 56;
 
+/* Reward + Market are NOT deployed yet — the art and metadata are live,
+ * the contracts deploy next from the owner's phone wallet. Until the
+ * addresses below are set, these sections show "not deployed yet". */
+const REWARD_ADDRESS = "0x0000000000000000000000000000000000000000";
+const MARKET_ADDRESS = "0x0000000000000000000000000000000000000000";
+const TIERS = [
+  { key: "grandmaster", name: "Grandmaster", cap: 200, armor: "Silver" },
+  { key: "epic", name: "Epic", cap: 180, armor: "Green" },
+  { key: "legend", name: "Legend", cap: 140, armor: "Gold" },
+  { key: "mythic", name: "Mythic", cap: 110, armor: "Gold & Purple" },
+  { key: "mythical-honor", name: "Mythical Honor", cap: 70, armor: "Purple, Blue & Gold" },
+  { key: "mythical-glory", name: "Mythical Glory", cap: 50, armor: "Diamond Purple & Gold" },
+  { key: "mythical-immortal", name: "Mythical Immortal", cap: 27, armor: "Diamond Blue & Purple, Gold, Winged" },
+];
+const isRewardDeployed = () =>
+  REWARD_ADDRESS !== "0x0000000000000000000000000000000000000000";
+const isMarketDeployed = () =>
+  MARKET_ADDRESS !== "0x0000000000000000000000000000000000000000";
+
 /* Selectors (verified from the compiled ABI) */
 const SEL = {
   checkIn: "0x183ff085", // checkIn()
@@ -35,6 +54,21 @@ const SEL = {
   ownerOf: "0x6352211e", // ownerOf(uint256)
   tokenURI: "0xc87b56dd", // tokenURI(uint256)
   nextTokenId: "0x75794a3c", // nextTokenId()
+  claim: "0x4e71d92d", // claim()
+  claimed: "0xc884ef83", // claimed(address)
+  totalMinted: "0xa2309ff8", // totalMinted()
+  remaining: "0x55234ec0", // remaining()
+  tierOf: "0x53f96df2", // tierOf(uint256)
+  tierMinted: "0xb8b1ccc8", // tierMinted(uint256)
+  tierCaps: "0x157003d9", // tierCaps(uint256)
+  isApprovedForAll: "0xe985e9c5", // isApprovedForAll(address,address)
+  setApprovalForAll: "0xa22cb465", // setApprovalForAll(address,bool)
+  list: "0x50fd7367", // list(uint256,uint256)
+  buy: "0xd96a094a", // buy(uint256)
+  cancel: "0x40e58ee5", // cancel(uint256)
+  activeCount: "0x4331ed1f", // activeCount()
+  activeAt: "0x15d6f71a", // activeAt(uint256)
+  listings: "0xde74e57b", // listings(uint256)
 };
 const CHECKIN_TOPIC =
   "0xf70c8ccfb49937cb9079ffa719be60366bdb8f901313f28dd3da4e482977a7fa"; // CheckIn(address,uint256,uint256,uint256)
@@ -61,6 +95,31 @@ function decodeString(hex) {
   const out = [];
   for (let i = 0; i < bytes.length; i += 2) out.push(parseInt(bytes.slice(i, i + 2), 16));
   return new TextDecoder().decode(new Uint8Array(out));
+}
+function encodeUintArg(n) {
+  return BigInt(n).toString(16).padStart(64, "0");
+}
+function encodeBoolArg(b) {
+  return (b ? "1" : "0").padStart(64, "0");
+}
+function parseBnbToWei(s) {
+  const m = /^(\d+)(?:\.(\d{1,18}))?$/.exec(s);
+  if (!m) throw new Error("bad price");
+  return BigInt(m[1]) * 10n ** 18n + BigInt((m[2] || "").padEnd(18, "0"));
+}
+function weiToBnb(wei) {
+  const w = BigInt(wei);
+  const whole = w / 10n ** 18n;
+  const frac = (w % 10n ** 18n).toString().padStart(18, "0").replace(/0+$/, "");
+  return frac ? whole.toString() + "." + frac : whole.toString();
+}
+async function waitReceipt(txHash) {
+  for (let i = 0; i < 40; i++) {
+    await new Promise((r) => setTimeout(r, 3000));
+    const rc = await rpc("eth_getTransactionReceipt", [txHash]);
+    if (rc) return rc;
+  }
+  return null;
 }
 
 /* Read-only JSON-RPC against the public node (no wallet needed). */
@@ -190,6 +249,9 @@ async function connect() {
     $("myAddr").textContent = shortAddr(account);
     await refreshMy();
     await loadBadges();
+    await refreshReward();
+    await refreshMarket();
+    await loadMyDinos();
   } catch (e) {
     setStatus("connectStatus", "Connection cancelled. Tap Connect to try again.");
   }
@@ -269,6 +331,7 @@ async function doCheckIn() {
     await refreshMy();
     await refreshGlobal();
     await loadBadges();
+    await refreshReward();
   } catch (e) {
     setStatus(
       "txStatus",
@@ -341,9 +404,387 @@ async function loadBadges() {
   }
 }
 
+/* ============================== reward (7-day Dino) ============================== */
+function renderTiers() {
+  const grid = $("tierGrid");
+  grid.innerHTML = "";
+  for (const t of TIERS) {
+    const div = document.createElement("div");
+    div.className = "tier";
+    div.innerHTML =
+      '<img loading="lazy" alt="DailyAgent Dino — ' + t.name + '" src="reward/thumb-' + t.key + '.webp">' +
+      '<div class="t">' + t.name + "</div>" +
+      '<div class="d">' + t.armor + " · " + t.cap + " / 777</div>";
+    grid.appendChild(div);
+  }
+}
+
+async function refreshReward() {
+  if (!isRewardDeployed()) {
+    $("rewardMinted").textContent = "—";
+    $("rewardBar").style.width = "0%";
+    $("rewardNote").textContent =
+      "The reward contract hasn't been deployed yet — the art is ready, deployment is next.";
+    $("rewardStreak").textContent = "—";
+    $("rewardClaimed").textContent = "—";
+    const btn = $("claimBtn");
+    btn.disabled = true;
+    btn.textContent = "Reward not deployed yet";
+    return;
+  }
+  try {
+    const [minted, remaining] = await Promise.all([
+      publicUint(REWARD_ADDRESS, SEL.totalMinted),
+      publicUint(REWARD_ADDRESS, SEL.remaining),
+    ]);
+    $("rewardMinted").textContent = minted.toString();
+    $("rewardBar").style.width = ((Number(minted) / 777) * 100).toString() + "%";
+    $("rewardNote").textContent =
+      remaining === 0n
+        ? "All 777 Dinos are claimed — sold out."
+        : remaining.toString() + " Dinos left to claim.";
+    if (!account) {
+      $("rewardStreak").textContent = "Connect your wallet to check";
+      $("rewardClaimed").textContent = "—";
+      const btn = $("claimBtn");
+      btn.disabled = true;
+      btn.textContent = "Connect your wallet first";
+      return;
+    }
+    const [streak, claimed] = await Promise.all([
+      publicUint(CONTRACT_ADDRESS, SEL.currentStreak + encodeAddressArg(account)),
+      publicUint(REWARD_ADDRESS, SEL.claimed + encodeAddressArg(account)),
+    ]);
+    $("rewardStreak").textContent = streak.toString() + (streak === 1n ? " day" : " days");
+    $("rewardClaimed").innerHTML =
+      claimed > 0n
+        ? '<span class="pill yes">Claimed — see it under List your Dino</span>'
+        : '<span class="pill idle">Not claimed yet</span>';
+    const btn = $("claimBtn");
+    if (claimed > 0n) {
+      btn.disabled = true;
+      btn.textContent = "Already claimed";
+    } else if (remaining === 0n) {
+      btn.disabled = true;
+      btn.textContent = "Sold out";
+    } else if (streak < 7n) {
+      btn.disabled = true;
+      btn.textContent = "Need a 7-day streak (" + streak.toString() + "/7)";
+    } else {
+      btn.disabled = false;
+      btn.textContent = "Claim your free Dino";
+    }
+  } catch (e) {
+    $("rewardNote").textContent = "Could not read the reward contract right now.";
+  }
+}
+
+async function doClaim() {
+  if (!isRewardDeployed()) return;
+  const btn = $("claimBtn");
+  btn.disabled = true;
+  btn.textContent = "Waiting for wallet…";
+  setStatus("claimStatus", "");
+  try {
+    const txHash = await window.ethereum.request({
+      method: "eth_sendTransaction",
+      params: [{ from: account, to: REWARD_ADDRESS, data: SEL.claim, value: "0x0" }],
+    });
+    setStatus(
+      "claimStatus",
+      'Claim sent. <a href="https://bscscan.com/tx/' +
+        txHash +
+        '" target="_blank" rel="noopener">View on BscScan</a> — waiting for confirmation…'
+    );
+    const rc = await waitReceipt(txHash);
+    if (rc && rc.status === "0x1") {
+      setStatus(
+        "claimStatus",
+        "Your Dino is minted! Find its tier under List your Dino below."
+      );
+    } else {
+      setStatus("claimStatus", "Transaction failed on-chain. Nothing was minted.");
+    }
+    await refreshReward();
+    await refreshMarket();
+    await loadMyDinos();
+  } catch (e) {
+    setStatus("claimStatus", "Claim cancelled or rejected in your wallet. Nothing was sent.");
+    await refreshReward();
+  }
+}
+
+/* ============================== market ============================== */
+function decodeListing(hex) {
+  // listings(uint256) -> (address seller, uint256 price, bool active)
+  const d = hex.slice(2);
+  return {
+    seller: "0x" + d.slice(24, 64),
+    price: BigInt("0x" + d.slice(64, 128)),
+    active: BigInt("0x" + d.slice(128, 192)) !== 0n,
+  };
+}
+
+async function refreshMarket() {
+  const grid = $("marketGrid");
+  if (!isMarketDeployed()) {
+    $("marketNote").textContent =
+      "The market hasn't been deployed yet — it goes live with the reward contract.";
+    grid.innerHTML = "";
+    $("listBtn").disabled = true;
+    return;
+  }
+  try {
+    const count = await publicUint(MARKET_ADDRESS, SEL.activeCount);
+    if (count === 0n) {
+      $("marketNote").textContent = "No Dinos listed yet — be the first to list one below.";
+      grid.innerHTML = "";
+      $("listBtn").disabled = !account;
+      return;
+    }
+    $("marketNote").textContent =
+      count.toString() + (count === 1n ? " Dino listed." : " Dinos listed.");
+    grid.innerHTML = "<div class='note'>Loading listings…</div>";
+    const ids = [];
+    for (let i = 0; i < Number(count); i++) {
+      ids.push(Number(await publicUint(MARKET_ADDRESS, SEL.activeAt + encodeUintArg(i))));
+    }
+    grid.innerHTML = "";
+    for (const tokenId of ids) {
+      const [listingHex, uriHex] = await Promise.all([
+        publicCall(MARKET_ADDRESS, SEL.listings + encodeUintArg(tokenId)),
+        publicCall(REWARD_ADDRESS, SEL.tokenURI + encodeUintArg(tokenId)),
+      ]);
+      const l = decodeListing(listingHex);
+      if (!l.active) continue;
+      let meta = null;
+      try {
+        meta = await (await fetch(decodeString(uriHex))).json();
+      } catch (e) {}
+      const tier = Number(await publicUint(REWARD_ADDRESS, SEL.tierOf + encodeUintArg(tokenId)));
+      const div = document.createElement("div");
+      div.className = "listing";
+      const isMine = account && l.seller.toLowerCase() === account.toLowerCase();
+      div.innerHTML =
+        '<img loading="lazy" alt="Dino #' +
+        tokenId +
+        '" src="' +
+        (meta && meta.image ? meta.image : "reward/thumb-" + TIERS[tier].key + ".webp") +
+        '">' +
+        '<div class="t">Dino #' +
+        tokenId +
+        " · " +
+        TIERS[tier].name +
+        "</div>" +
+        '<div class="price">' +
+        weiToBnb(l.price) +
+        " BNB</div>" +
+        '<div class="s">Seller ' +
+        shortAddr(l.seller) +
+        "</div>";
+      const btn = document.createElement("button");
+      if (isMine) {
+        btn.textContent = "Cancel listing";
+        btn.className = "secondary";
+        btn.addEventListener("click", () => doCancel(tokenId));
+      } else {
+        btn.textContent = "Buy";
+        btn.disabled = !account;
+        btn.addEventListener("click", () => doBuy(tokenId, l.price));
+      }
+      div.appendChild(btn);
+      grid.appendChild(div);
+    }
+    $("listBtn").disabled = !account;
+  } catch (e) {
+    $("marketNote").textContent = "Could not load the market right now.";
+  }
+}
+
+async function loadMyDinos() {
+  const chips = $("myDinosChips");
+  const note = $("myDinosNote");
+  chips.innerHTML = "";
+  if (!account || !isRewardDeployed()) {
+    note.textContent = account
+      ? "The reward contract hasn't been deployed yet."
+      : "Connect your wallet to see your Dinos.";
+    return;
+  }
+  try {
+    const minted = Number(await publicUint(REWARD_ADDRESS, SEL.totalMinted));
+    const mine = [];
+    const BATCH = 8;
+    for (let s = 1; s <= minted; s += BATCH) {
+      const batch = [];
+      for (let id = s; id < Math.min(s + BATCH, minted + 1); id++) batch.push(id);
+      const results = await Promise.all(
+        batch.map((id) =>
+          publicCall(REWARD_ADDRESS, SEL.ownerOf + encodeUintArg(id))
+            .then((hex) => ({ id, owner: "0x" + hex.slice(-40).toLowerCase() }))
+            .catch(() => null)
+        )
+      );
+      for (const r of results) {
+        if (r && r.owner === account.toLowerCase()) mine.push(r.id);
+      }
+    }
+    if (!mine.length) {
+      note.textContent = "You don't hold a Dino yet — reach a 7-day streak and claim one above.";
+      return;
+    }
+    note.textContent = "Your Dinos — tap one to fill the listing form:";
+    for (const id of mine) {
+      const tier = Number(await publicUint(REWARD_ADDRESS, SEL.tierOf + encodeUintArg(id)));
+      const chip = document.createElement("span");
+      chip.className = "chip";
+      chip.textContent = "#" + id + " · " + TIERS[tier].name;
+      chip.addEventListener("click", () => {
+        $("listTokenId").value = String(id);
+      });
+      chips.appendChild(chip);
+    }
+  } catch (e) {
+    note.textContent = "Could not load your Dinos right now.";
+  }
+}
+
+async function doList() {
+  if (!isMarketDeployed() || !account) return;
+  const tokenId = parseInt($("listTokenId").value, 10);
+  const priceStr = $("listPrice").value.trim();
+  if (!tokenId || tokenId <= 0) {
+    setStatus("listStatus", "Enter a Dino token ID first.");
+    return;
+  }
+  let price;
+  try {
+    price = parseBnbToWei(priceStr);
+  } catch (e) {
+    setStatus("listStatus", "Enter a valid BNB price, e.g. 0.05.");
+    return;
+  }
+  if (price <= 0n) {
+    setStatus("listStatus", "Price must be above 0 BNB.");
+    return;
+  }
+  const btn = $("listBtn");
+  btn.disabled = true;
+  btn.textContent = "Waiting for wallet…";
+  setStatus("listStatus", "");
+  try {
+    const approved = await publicUint(
+      REWARD_ADDRESS,
+      SEL.isApprovedForAll + encodeAddressArg(account) + encodeAddressArg(MARKET_ADDRESS)
+    );
+    if (approved === 0n) {
+      setStatus("listStatus", "Step 1 of 2: approve the market to move your Dino…");
+      const approveTx = await window.ethereum.request({
+        method: "eth_sendTransaction",
+        params: [
+          {
+            from: account,
+            to: REWARD_ADDRESS,
+            data:
+              SEL.setApprovalForAll +
+              encodeAddressArg(MARKET_ADDRESS) +
+              encodeBoolArg(true),
+            value: "0x0",
+          },
+        ],
+      });
+      await waitReceipt(approveTx);
+    }
+    setStatus("listStatus", "Step 2 of 2: listing your Dino…");
+    const txHash = await window.ethereum.request({
+      method: "eth_sendTransaction",
+      params: [
+        {
+          from: account,
+          to: MARKET_ADDRESS,
+          data: SEL.list + encodeUintArg(tokenId) + encodeUintArg(price),
+          value: "0x0",
+        },
+      ],
+    });
+    const rc = await waitReceipt(txHash);
+    if (rc && rc.status === "0x1") {
+      setStatus("listStatus", "Listed! Your Dino is on the market.");
+    } else {
+      setStatus("listStatus", "Listing failed on-chain. Your Dino was not listed.");
+    }
+    await refreshMarket();
+    await loadMyDinos();
+  } catch (e) {
+    setStatus("listStatus", "Listing cancelled or rejected in your wallet.");
+  }
+  btn.disabled = false;
+  btn.textContent = "List for sale";
+}
+
+async function doBuy(tokenId, priceWei) {
+  if (!isMarketDeployed() || !account) return;
+  try {
+    const txHash = await window.ethereum.request({
+      method: "eth_sendTransaction",
+      params: [
+        {
+          from: account,
+          to: MARKET_ADDRESS,
+          data: SEL.buy + encodeUintArg(tokenId),
+          value: "0x" + priceWei.toString(16),
+        },
+      ],
+    });
+    setStatus("marketNote", "Purchase sent — waiting for confirmation…");
+    const rc = await waitReceipt(txHash);
+    if (rc && rc.status === "0x1") {
+      setStatus("marketNote", "You bought Dino #" + tokenId + "! It is in your wallet now.");
+    } else {
+      setStatus("marketNote", "Purchase failed on-chain. No BNB was taken.");
+    }
+    await refreshMarket();
+    await loadMyDinos();
+  } catch (e) {
+    setStatus("marketNote", "Purchase cancelled or rejected in your wallet.");
+  }
+}
+
+async function doCancel(tokenId) {
+  if (!isMarketDeployed() || !account) return;
+  try {
+    const txHash = await window.ethereum.request({
+      method: "eth_sendTransaction",
+      params: [
+        {
+          from: account,
+          to: MARKET_ADDRESS,
+          data: SEL.cancel + encodeUintArg(tokenId),
+          value: "0x0",
+        },
+      ],
+    });
+    const rc = await waitReceipt(txHash);
+    if (rc && rc.status === "0x1") {
+      setStatus(
+        "marketNote",
+        "Listing cancelled — Dino #" + tokenId + " is back in your wallet."
+      );
+    } else {
+      setStatus("marketNote", "Cancel failed on-chain.");
+    }
+    await refreshMarket();
+    await loadMyDinos();
+  } catch (e) {
+    setStatus("marketNote", "Cancel rejected in your wallet.");
+  }
+}
+
 /* ============================== boot ============================== */
 $("connectBtn").addEventListener("click", connect);
 $("checkInBtn").addEventListener("click", doCheckIn);
+$("claimBtn").addEventListener("click", doClaim);
+$("listBtn").addEventListener("click", doList);
 if (window.ethereum) {
   window.ethereum.on("accountsChanged", (accs) => {
     account = accs.length ? accs[0] : null;
@@ -353,6 +794,9 @@ if (window.ethereum) {
       $("myAddr").textContent = shortAddr(account);
       refreshMy();
       loadBadges();
+      refreshReward();
+      refreshMarket();
+      loadMyDinos();
     } else {
       $("walletBox").hidden = false;
       $("accountBox").hidden = true;
@@ -369,8 +813,14 @@ if (window.ethereum) {
         $("myAddr").textContent = shortAddr(account);
         refreshMy();
         loadBadges();
+        refreshReward();
+        refreshMarket();
+        loadMyDinos();
       }
     })
     .catch(() => {});
 }
+renderTiers();
+refreshReward();
+refreshMarket();
 refreshGlobal();
