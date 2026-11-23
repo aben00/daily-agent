@@ -81,6 +81,33 @@ async function publicUint(to, data) {
 }
 
 /* ============================== global stats ============================== */
+async function refreshProgress() {
+  try {
+    const logs = await rpc("eth_getLogs", [
+      {
+        address: CONTRACT_ADDRESS,
+        fromBlock: "0x" + DEPLOY_BLOCK.toString(16),
+        toBlock: "latest",
+        topics: [CHECKIN_TOPIC],
+      },
+    ]);
+    const uniq = new Set(logs.map((l) => l.topics[1].toLowerCase()));
+    const n = uniq.size;
+    $("uniqueHolders").textContent = n.toString();
+    $("hackCount").textContent = n.toString();
+    $("hackBar").style.width = Math.min(100, (n / 30) * 100) + "%";
+    $("hackNote").textContent =
+      n >= 30
+        ? "Goal reached — 30 unique Agent IDs checked in. Ready to submit!"
+        : 30 - n + " more unique Agent ID check-ins to go · Submit before 9 Dec 2026, 15:00 WIB.";
+  } catch (e) {
+    $("uniqueHolders").textContent = "—";
+    $("hackCount").textContent = "—";
+    $("hackNote").textContent =
+      "Live count unavailable right now — check-ins are still safe on-chain.";
+  }
+}
+
 async function refreshGlobal() {
   $("contractAddr").textContent = isDeployed()
     ? shortAddr(CONTRACT_ADDRESS)
@@ -91,6 +118,9 @@ async function refreshGlobal() {
   if (!isDeployed()) {
     $("globalTotal").textContent = "—";
     $("globalBadges").textContent = "—";
+    $("uniqueHolders").textContent = "—";
+    $("hackCount").textContent = "—";
+    $("hackNote").textContent = "Contract not deployed yet.";
     return;
   }
   try {
@@ -104,6 +134,7 @@ async function refreshGlobal() {
     $("globalTotal").textContent = "unavailable";
     $("globalBadges").textContent = "unavailable";
   }
+  refreshProgress();
 }
 
 /* ============================== wallet ============================== */
