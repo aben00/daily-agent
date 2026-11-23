@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DailyAgent — Daily check-in badges for Agent ID holders</title>
-<meta name="description" content="One free check-in per day for Binance Agent ID holders. Each check-in mints a badge NFT. No token, no rewards — just proof you showed up.">
+<meta name="description" content="One free check-in per day for Binance Agent ID holders. Each check-in mints a badge NFT. Reach a 7-day streak to claim a free Dino NFT, and trade Dinos on the built-in market. Free — gas only.">
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -74,6 +74,24 @@
   .badge img { width: 100%; border-radius: 8px; }
   .badge .t { font-size: 13px; font-weight: 700; margin-top: 6px; }
   .badge .d { font-size: 12px; color: #9aa3b2; }
+
+  /* ---------- reward tiers / market ---------- */
+  .tiers { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+  .tier { background: #14161b; border: 1px solid #2a2e38; border-radius: 12px; padding: 8px; text-align: center; }
+  .tier img { width: 100%; border-radius: 8px; }
+  .tier .t { font-size: 13px; font-weight: 700; margin-top: 6px; }
+  .tier .d { font-size: 12px; color: #9aa3b2; }
+  .field { margin: 10px 0; }
+  .field label { display: block; font-size: 13px; color: #9aa3b2; margin-bottom: 4px; }
+  .field input { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #2a2e38; background: #14161b; color: #e8eaf0; font-size: 16px; }
+  .listings { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .listing { background: #14161b; border: 1px solid #2a2e38; border-radius: 12px; padding: 10px; text-align: center; }
+  .listing img { width: 100%; border-radius: 8px; }
+  .listing .t { font-size: 13px; font-weight: 700; margin-top: 6px; }
+  .listing .price { font-size: 18px; font-weight: 800; color: #f0b90b; margin-top: 2px; }
+  .listing .s { font-size: 12px; color: #9aa3b2; }
+  .listing button { margin-top: 8px; padding: 10px; font-size: 15px; }
+  .chip { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 700; background: #262a33; color: #e8eaf0; border: 1px solid #2a2e38; cursor: pointer; }
   footer { text-align: center; color: #7d8590; font-size: 13px; margin-top: 28px; }
   footer a { color: #9aa3b2; }
 </style>
@@ -86,8 +104,8 @@
     <p class="tagline">Daily check-in badges for Agent ID holders.</p>
     <div class="pills">
       <span class="pill gold">Free · gas only</span>
-      <span class="pill grey">No token</span>
-      <span class="pill grey">No rewards</span>
+      <span class="pill gold">7-day Dino reward</span>
+      <span class="pill grey">Trade Dinos on the market</span>
     </div>
   </header>
 
@@ -114,8 +132,9 @@
       <div class="step"><div class="num">1</div><div><div class="t">Hold a Binance Agent ID</div><div class="d">Any name.ai identity works — the contract checks it on-chain.</div></div></div>
       <div class="step"><div class="num">2</div><div><div class="t">Check in once a day</div><div class="d">One check-in per UTC day, straight from your wallet. Gas only.</div></div></div>
       <div class="step"><div class="num">3</div><div><div class="t">Collect your badge NFT</div><div class="d">Each check-in mints a free badge. Check in on consecutive days to build your streak.</div></div></div>
+      <div class="step"><div class="num">4</div><div><div class="t">Hit a 7-day streak, claim a Dino</div><div class="d">One free Dino NFT per wallet, from 7 tiers (777 total). Trade it on the market below — no fees, BNB only.</div></div></div>
     </div>
-    <div class="note" style="margin-top:12px">The badge is just proof you showed up. The contract has no owner, no fees and no pause switch.</div>
+    <div class="note" style="margin-top:12px">The badge is just proof you showed up. The reward and market contracts have no owner, no fees and no pause switch.</div>
   </div>
 
   <div class="card">
@@ -138,6 +157,38 @@
     </div>
   </div>
 
+  <div class="card">
+    <h2>7-day reward — Dino NFT</h2>
+    <div class="progress-big"><span id="rewardMinted">…</span><span> / 777 Dinos minted</span></div>
+    <div class="bar"><div id="rewardBar"></div></div>
+    <div class="note" id="rewardNote">Checking the reward contract…</div>
+    <div id="rewardBox" style="margin-top:14px">
+      <div class="row"><span class="k">Your streak</span><span class="v" id="rewardStreak">…</span></div>
+      <div class="row"><span class="k">Your Dino</span><span class="v" id="rewardClaimed">…</span></div>
+      <div style="margin-top:14px">
+        <button id="claimBtn" disabled>Claim your free Dino</button>
+        <div class="status" id="claimStatus"></div>
+      </div>
+    </div>
+    <h2 style="margin-top:18px">The 7 tiers</h2>
+    <div class="tiers" id="tierGrid"></div>
+    <div class="note" style="margin-top:8px">One claim per wallet, ever. Your tier is drawn at random, weighted by what is still left — the rarer the tier, the smaller its share of the 777.</div>
+  </div>
+
+  <div class="card">
+    <h2>Market — trade Dinos</h2>
+    <div class="note" id="marketNote">Checking the market…</div>
+    <div class="listings" id="marketGrid" style="margin-top:12px"></div>
+    <h2 style="margin-top:18px">List your Dino</h2>
+    <div class="note" id="myDinosNote">Connect your wallet to see your Dinos.</div>
+    <div id="myDinosChips" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"></div>
+    <div class="field"><label for="listTokenId">Dino token ID</label><input id="listTokenId" inputmode="numeric" placeholder="e.g. 42"></div>
+    <div class="field"><label for="listPrice">Price (BNB)</label><input id="listPrice" inputmode="decimal" placeholder="e.g. 0.05"></div>
+    <button id="listBtn" disabled>List for sale</button>
+    <div class="status" id="listStatus"></div>
+    <div class="note" style="margin-top:8px">No fees — the buyer pays the exact price and the full amount goes to you. Your Dino sits in escrow until it sells or you cancel the listing.</div>
+  </div>
+
   <div class="card" id="badgesCard" hidden>
     <h2>My badges</h2>
     <div class="badges" id="badgesGrid"></div>
@@ -150,6 +201,6 @@
     <div class="note" style="margin-top:8px">DailyAgent is an independent community project. Not affiliated with Binance.</div>
   </footer>
 </div>
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>
