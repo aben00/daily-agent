@@ -87,36 +87,40 @@ async function publicUint(to, data) {
  * from logs is unreliable here — ownerOf calls have no range limit.
  * Badge IDs run 1..nextTokenId; a missing ID is skipped. */
 async function refreshProgress(minted) {
-  try {
-    const total = Number(minted);
-    const uniq = new Set();
-    const BATCH = 8;
-    for (let s = 1; s <= total; s += BATCH) {
-      const batch = [];
-      for (let id = s; id < Math.min(s + BATCH, total + 1); id++) batch.push(id);
-      const results = await Promise.all(
-        batch.map((id) =>
-          publicCall(CONTRACT_ADDRESS, SEL.ownerOf + id.toString(16).padStart(64, "0"))
-            .then((hex) => "0x" + hex.slice(-40).toLowerCase())
-            .catch(() => null)
-        )
-      );
-      for (const a of results) if (a) uniq.add(a);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const total = Number(minted);
+      const uniq = new Set();
+      const BATCH = 8;
+      for (let s = 1; s <= total; s += BATCH) {
+        const batch = [];
+        for (let id = s; id < Math.min(s + BATCH, total + 1); id++) batch.push(id);
+        const results = await Promise.all(
+          batch.map((id) =>
+            publicCall(CONTRACT_ADDRESS, SEL.ownerOf + id.toString(16).padStart(64, "0"))
+              .then((hex) => "0x" + hex.slice(-40).toLowerCase())
+              .catch(() => null)
+          )
+        );
+        for (const a of results) if (a) uniq.add(a);
+      }
+      const n = uniq.size;
+      $("uniqueHolders").textContent = n.toString();
+      $("hackCount").textContent = n.toString();
+      $("hackBar").style.width = Math.min(100, (n / 30) * 100) + "%";
+      $("hackNote").textContent =
+        n >= 30
+          ? "Goal reached — 30 unique Agent IDs checked in. Ready to submit!"
+          : 30 - n + " more unique Agent ID check-ins to go · Submit before 9 Dec 2026, 15:00 WIB.";
+      return;
+    } catch (e) {
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 3000));
     }
-    const n = uniq.size;
-    $("uniqueHolders").textContent = n.toString();
-    $("hackCount").textContent = n.toString();
-    $("hackBar").style.width = Math.min(100, (n / 30) * 100) + "%";
-    $("hackNote").textContent =
-      n >= 30
-        ? "Goal reached — 30 unique Agent IDs checked in. Ready to submit!"
-        : 30 - n + " more unique Agent ID check-ins to go · Submit before 9 Dec 2026, 15:00 WIB.";
-  } catch (e) {
-    $("uniqueHolders").textContent = "—";
-    $("hackCount").textContent = "—";
-    $("hackNote").textContent =
-      "Live count unavailable right now — check-ins are still safe on-chain.";
   }
+  $("uniqueHolders").textContent = "—";
+  $("hackCount").textContent = "—";
+  $("hackNote").textContent =
+    "Live count unavailable right now — check-ins are still safe on-chain.";
 }
 
 async function refreshGlobal() {
