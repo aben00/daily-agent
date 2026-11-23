@@ -32,6 +32,7 @@ const SEL = {
   currentStreak: "0x5c45f739", // currentStreak(address)
   totalCheckInsGlobal: "0x0cdbd5f5", // totalCheckInsGlobal()
   balanceOf: "0x70a08231", // balanceOf(address)
+  ownerOf: "0x6352211e", // ownerOf(uint256)
   tokenURI: "0xc87b56dd", // tokenURI(uint256)
   nextTokenId: "0x75794a3c", // nextTokenId()
 };
@@ -81,17 +82,27 @@ async function publicUint(to, data) {
 }
 
 /* ============================== global stats ============================== */
-async function refreshProgress() {
+/* Unique holders via an ownerOf scan. eth_getLogs is range-limited on
+ * the public nodes (5000 blocks), so counting distinct CheckIn senders
+ * from logs is unreliable here — ownerOf calls have no range limit.
+ * Badge IDs run 1..nextTokenId; a missing ID is skipped. */
+async function refreshProgress(minted) {
   try {
-    const logs = await rpc("eth_getLogs", [
-      {
-        address: CONTRACT_ADDRESS,
-        fromBlock: "0x" + DEPLOY_BLOCK.toString(16),
-        toBlock: "latest",
-        topics: [CHECKIN_TOPIC],
-      },
-    ]);
-    const uniq = new Set(logs.map((l) => l.topics[1].toLowerCase()));
+    const total = Number(minted);
+    const uniq = new Set();
+    const BATCH = 8;
+    for (let s = 1; s <= total; s += BATCH) {
+      const batch = [];
+      for (let id = s; id < Math.min(s + BATCH, total + 1); id++) batch.push(id);
+      const results = await Promise.all(
+        batch.map((id) =>
+          publicCall(CONTRACT_ADDRESS, SEL.ownerOf + id.toString(16).padStart(64, "0"))
+            .then((hex) => "0x" + hex.slice(-40).toLowerCase())
+            .catch(() => null)
+        )
+      );
+      for (const a of results) if (a) uniq.add(a);
+    }
     const n = uniq.size;
     $("uniqueHolders").textContent = n.toString();
     $("hackCount").textContent = n.toString();
@@ -130,11 +141,11 @@ async function refreshGlobal() {
     ]);
     $("globalTotal").textContent = total.toString();
     $("globalBadges").textContent = minted.toString();
+    refreshProgress(minted);
   } catch (e) {
     $("globalTotal").textContent = "unavailable";
     $("globalBadges").textContent = "unavailable";
   }
-  refreshProgress();
 }
 
 /* ============================== wallet ============================== */
